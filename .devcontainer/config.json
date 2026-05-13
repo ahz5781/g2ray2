@@ -1,17 +1,114 @@
-FROM debian:bookworm-slim
-COPY setup.sh /tmp/setup.sh
-COPY config.json /etc/xray/g2ray.json
-COPY show-link.sh /usr/local/bin/show-link.sh
-COPY start.sh /usr/local/bin/start.sh
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-       bash curl wget unzip ca-certificates openssl uuid-runtime tmux \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /etc/xray \
-    && chmod +x /tmp/setup.sh \
-    && /tmp/setup.sh \
-    && rm /tmp/setup.sh \
-    && chmod +x /usr/local/bin/show-link.sh \
-    && chmod +x /usr/local/bin/start.sh
-EXPOSE 443
-CMD ["/usr/local/bin/xray","run","-c","/etc/xray/g2ray.json"]
+{
+  "log": {
+    "loglevel": "warning",
+    "access": "none",
+    "error": "/tmp/xray-error.log"
+  },
+  "dns": {
+    "servers": [
+      {
+        "address": "https://1.1.1.1/dns-query",
+        "domains": [
+          "geosite:geolocation-!cn"
+        ],
+        "queryStrategy": "UseIP"
+      },
+      "8.8.8.8",
+      "localhost"
+    ],
+    "queryStrategy": "UseIPv4"
+  },
+  "inbounds": [
+    {
+      "tag": "vless-in",
+      "port": 443,
+      "listen": "0.0.0.0",
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "50d687cf-143e-4c29-9a06-0e5e44cc901e",
+            "flow": "",
+            "level": 0,
+            "email": "user@nova-proxy-03d15c"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "mode": "packet-up",
+          "path": "/",
+          "maxUploadSize": 1000000,
+          "maxConcurrentUploads": 10
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "routeOnly": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIPv4"
+      }
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole",
+      "settings": {
+        "response": {
+          "type": "http"
+        }
+      }
+    }
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "protocol": [
+          "bittorrent"
+        ],
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:category-ads-all"
+        ],
+        "outboundTag": "block"
+      }
+    ]
+  },
+  "policy": {
+    "levels": {
+      "0": {
+        "handshake": 4,
+        "connIdle": 300,
+        "uplinkOnly": 2,
+        "downlinkOnly": 5,
+        "bufferSize": 512
+      }
+    }
+  }
+}
